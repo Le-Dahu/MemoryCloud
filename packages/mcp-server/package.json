@@ -1,0 +1,16 @@
+{
+  "name": "mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MemoryCloud MCP Server",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "memory"
+  ],
+  "author": "",
+  "license": "MIT"
+}
