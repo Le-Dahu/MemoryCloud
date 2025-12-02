@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "framework": "BMAD Method",
+  "project": "MemoryCloud",
+  "installation": "manual",
+  "agents": {
+    "analyst": ".bmad-core/agents/analyst.md",
+    "pm": ".bmad-core/agents/pm.md",
+    "architect": ".bmad-core/agents/architect.md",
+    "scrum-master": ".bmad-core/agents/scrum-master.md",
+    "dev": ".bmad-core/agents/dev.md",
+    "qa": ".bmad-core/agents/qa.md"
+  },
+  "workflow": [
+    "analyst",
+    "pm",
+    "architect",
+    "scrum-master",
+    "dev",
+    "qa"
+  ]
+}
