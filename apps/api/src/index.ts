@@ -1,3 +1,8 @@
+// Load environment variables first, before any other imports
+import { config as loadEnv } from 'dotenv';
+import { resolve } from 'path';
+loadEnv({ path: resolve(process.cwd(), '.env') });
+
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { config } from './config/env';
