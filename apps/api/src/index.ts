@@ -11,6 +11,7 @@ import { projectsRoutes } from './routes/projects';
 import { sessionsRoutes } from './routes/sessions';
 import { messagesRoutes } from './routes/messages';
 import { contextRoutes } from './routes/context';
+import { apiKeysRoutes } from './routes/api-keys';
 import { devAuthMiddleware } from './middleware/auth';
 
 const fastify = Fastify({
@@ -39,6 +40,7 @@ async function start() {
       await instance.register(sessionsRoutes);
       await instance.register(messagesRoutes);
       await instance.register(contextRoutes);
+      await instance.register(apiKeysRoutes, { prefix: '/api-keys' });
     }, { prefix: '/api/v1' });
 
     // Start server
