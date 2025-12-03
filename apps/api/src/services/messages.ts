@@ -94,6 +94,7 @@ export async function getSessions(projectId: string): Promise<Session[]> {
 
 /**
  * Adds a message to a session and syncs with ZEP
+ * ZEP uses project_id as the session identifier
  * @param sessionId - The session ID
  * @param role - Message role (user, assistant, system, function)
  * @param content - Message content
@@ -113,35 +114,25 @@ export async function addMessage(
       throw new Error('Session not found');
     }
 
-    // Get project to find ZEP collection
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', session.project_id)
-      .single();
-
-    if (projectError) {
-      throw new Error(`Failed to fetch project: ${projectError.message}`);
-    }
-
-    // Try to add to ZEP if collection exists
-    let zepMemoryId: string | null = null;
-    if (project?.zep_collection_id) {
-      try {
-        zepMemoryId = await zep.addMemory(
-          project.zep_collection_id,
-          content,
+    // Try to add to ZEP using project_id as the ZEP session ID
+    try {
+      await zep.addMemory(
+        session.project_id, // Use project_id as ZEP sessionId
+        [
           {
-            ...metadata,
             role,
-            session_id: sessionId,
-            project_id: session.project_id,
-          }
-        );
-      } catch (zepError) {
-        console.warn('Failed to add message to ZEP:', zepError);
-        // Continue without ZEP
-      }
+            content,
+            metadata: {
+              ...metadata,
+              session_id: sessionId,
+              project_id: session.project_id,
+            },
+          },
+        ]
+      );
+    } catch (zepError) {
+      console.warn('Failed to add message to ZEP:', zepError);
+      // Continue without ZEP - message will still be saved to database
     }
 
     // Create message in database
@@ -151,7 +142,6 @@ export async function addMessage(
         session_id: sessionId,
         role,
         content,
-        zep_memory_id: zepMemoryId,
         metadata,
       })
       .select()
@@ -198,6 +188,7 @@ export async function getMessages(sessionId: string): Promise<Message[]> {
 
 /**
  * Searches for relevant context across a project using ZEP semantic search
+ * Uses project_id as the ZEP session identifier
  * @param projectId - The project ID
  * @param query - The search query
  * @param maxTokens - Maximum number of tokens to return (approximate)
@@ -209,52 +200,37 @@ export async function searchContext(
   maxTokens: number = 2000
 ): Promise<SearchContextResponse> {
   try {
-    // Get project to find ZEP collection
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('id', projectId)
-      .single();
-
-    if (projectError) {
-      throw new Error(`Failed to fetch project: ${projectError.message}`);
-    }
-
-    if (!project?.zep_collection_id) {
-      // No ZEP collection, fall back to recency-based search
-      return await fallbackContextSearch(projectId, maxTokens);
-    }
-
-    // Perform semantic search in ZEP
+    // Perform semantic search in ZEP using project_id as session ID
     const searchResults = await zep.searchMemory(
-      project.zep_collection_id,
+      projectId, // Use project_id as ZEP sessionId
       query,
       20 // Get top 20 results
     );
 
-    // Get corresponding messages from database
-    const messageIds = searchResults
-      .map((result) => result.memory.uuid)
-      .filter(Boolean);
-
-    if (messageIds.length === 0) {
-      return { messages: [], total_tokens: 0 };
+    if (searchResults.length === 0) {
+      // No results from ZEP, fall back to recency-based search
+      return await fallbackContextSearch(projectId, maxTokens);
     }
 
-    const { data: messages, error: messagesError } = await supabase
-      .from('messages')
-      .select('*')
-      .in('zep_memory_id', messageIds);
+    // Extract content from ZEP search results and format as messages
+    const messages: Message[] = searchResults
+      .filter((result) => result.message && result.message.content)
+      .map((result, index) => ({
+        id: result.message?.uuid || `zep-${index}`,
+        session_id: (result.message?.metadata as any)?.session_id || '',
+        role: (result.message?.role as any) || 'assistant',
+        content: result.message!.content!,
+        zep_memory_id: result.message?.uuid || null,
+        metadata: {
+          ...result.message?.metadata,
+          zep_score: result.score,
+        },
+        created_at: result.message?.createdAt || new Date().toISOString(),
+      }));
 
-    if (messagesError) {
-      console.warn('Failed to fetch messages from database:', messagesError);
-      return { messages: [], total_tokens: 0 };
-    }
-
-    // Sort by ZEP relevance score and truncate to maxTokens
-    const sortedMessages = messages || [];
+    // Truncate to maxTokens
     const { truncatedMessages, totalTokens } = truncateByTokens(
-      sortedMessages,
+      messages,
       maxTokens
     );
 
@@ -263,7 +239,7 @@ export async function searchContext(
       total_tokens: totalTokens,
     };
   } catch (error) {
-    console.error('Error searching context:', error);
+    console.error('Error searching context with ZEP:', error);
     // Fall back to recency-based search
     return await fallbackContextSearch(projectId, maxTokens);
   }

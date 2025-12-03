@@ -1,11 +1,11 @@
 import { ZepClient } from '@getzep/zep-cloud';
+import type { Zep } from '@getzep/zep-cloud';
 import { config } from '../config/env';
-import { ZepMemory, ZepSearchResult } from '../types';
 
-// Initialize ZEP Cloud client
-let zepClient: any = null;
+// Initialize ZEP Cloud client singleton
+let zepClient: ZepClient | null = null;
 
-function getZepClient(): any {
+function getZepClient(): ZepClient {
   if (!zepClient) {
     if (!config.zep.apiKey) {
       throw new Error('ZEP_API_KEY is not configured');
@@ -16,68 +16,36 @@ function getZepClient(): any {
 }
 
 /**
- * Creates a new collection in ZEP Cloud for a project
- * @param projectId - The project ID to associate with this collection
- * @param name - Name of the collection
- * @returns The collection ID created in ZEP
- */
-export async function createCollection(
-  projectId: string,
-  name: string
-): Promise<string> {
-  try {
-    const client = getZepClient();
-
-    // Create collection with project metadata
-    // Note: API methods may vary - adjust based on actual ZEP Cloud SDK documentation
-    const collection: any = await (client.memory as any).addCollection({
-      name: `project_${projectId}_${name}`,
-      description: `Memory collection for project ${projectId}`,
-      metadata: {
-        project_id: projectId,
-        created_by: 'memorycloud',
-      },
-    });
-
-    return collection.uuid || collection.id || '';
-  } catch (error) {
-    console.error('Error creating ZEP collection:', error);
-    throw new Error(`Failed to create ZEP collection: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-}
-
-/**
- * Adds a memory (message) to a ZEP collection
- * @param collectionId - The ZEP collection ID
- * @param content - The message content
- * @param metadata - Optional metadata to attach to the memory
- * @returns The memory ID created in ZEP
+ * Adds messages to a ZEP session
+ * Sessions are created automatically on first add
+ * @param sessionId - The session ID (use project_id or project_id:session_id)
+ * @param messages - Array of messages to add
+ * @returns Success response from ZEP
  */
 export async function addMemory(
-  collectionId: string,
-  content: string,
-  metadata: Record<string, any> = {}
-): Promise<string> {
+  sessionId: string,
+  messages: Array<{
+    role: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+  }>
+): Promise<Zep.SuccessResponse> {
   try {
     const client = getZepClient();
 
-    // Add memory to collection
-    // Note: API methods may vary - adjust based on actual ZEP Cloud SDK documentation
-    const memory: any = await client.memory.add(collectionId, {
-      messages: [
-        {
-          content,
-          role: metadata.role || 'user',
-          metadata: {
-            ...metadata,
-            timestamp: new Date().toISOString(),
-          },
-        },
-      ],
+    // Convert messages to ZEP format
+    const zepMessages: Zep.Message[] = messages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+      metadata: msg.metadata,
+    }));
+
+    // Add memory to session (creates session if it doesn't exist)
+    const response = await client.memory.add(sessionId, {
+      messages: zepMessages,
     });
 
-    // Return the first memory UUID (ZEP returns array or single object)
-    return memory.uuids?.[0] || memory.uuid || memory.id || '';
+    return response;
   } catch (error) {
     console.error('Error adding memory to ZEP:', error);
     throw new Error(`Failed to add memory to ZEP: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -85,77 +53,147 @@ export async function addMemory(
 }
 
 /**
- * Performs semantic search in a ZEP collection
- * @param collectionId - The ZEP collection ID
- * @param query - The search query
+ * Retrieves memory for a session
+ * @param sessionId - The session ID
+ * @returns Memory object with messages, summary, and facts
+ */
+export async function getMemory(
+  sessionId: string
+): Promise<Zep.Memory | null> {
+  try {
+    const client = getZepClient();
+    const memory = await client.memory.get(sessionId);
+    return memory;
+  } catch (error) {
+    // Session might not exist yet
+    if (error instanceof Error && error.message.includes('404')) {
+      return null;
+    }
+    console.error('Error getting memory from ZEP:', error);
+    throw new Error(`Failed to get memory from ZEP: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Performs semantic search within a session's memory
+ * @param sessionId - The session ID
+ * @param query - The search query text
  * @param limit - Maximum number of results to return (default: 10)
- * @returns Array of search results with memories and scores
+ * @returns Array of search results with messages, scores, and summaries
  */
 export async function searchMemory(
-  collectionId: string,
+  sessionId: string,
   query: string,
   limit: number = 10
-): Promise<ZepSearchResult[]> {
+): Promise<Zep.MemorySearchResult[]> {
   try {
     const client = getZepClient();
 
     // Perform semantic search
-    const results = await client.memory.search(collectionId, {
+    const results = await client.memory.search(sessionId, {
       text: query,
       limit,
     });
 
-    // Map results to our format
-    return results.map((result: any) => ({
-      memory: {
-        uuid: result.uuid || result.message?.uuid,
-        content: result.message?.content || result.content || '',
-        metadata: result.metadata || result.message?.metadata || {},
-        created_at: result.created_at || result.message?.created_at,
-      },
-      score: result.score || 0,
-    }));
+    return results;
   } catch (error) {
+    // Session might not exist yet, return empty results
+    if (error instanceof Error && error.message.includes('404')) {
+      return [];
+    }
     console.error('Error searching ZEP memory:', error);
     throw new Error(`Failed to search ZEP memory: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 /**
- * Gets a specific collection by ID
- * @param collectionId - The ZEP collection ID
- * @returns Collection details
+ * Gets a session from ZEP
+ * @param sessionId - The session ID
+ * @returns Session object or null if not found
  */
-export async function getCollection(collectionId: string) {
+export async function getSession(
+  sessionId: string
+): Promise<Zep.Session | null> {
   try {
     const client = getZepClient();
-    // Note: API methods may vary - adjust based on actual ZEP Cloud SDK documentation
-    return await (client.memory as any).getCollection(collectionId);
+    const session = await client.memory.getSession(sessionId);
+    return session;
   } catch (error) {
-    console.error('Error getting ZEP collection:', error);
-    throw new Error(`Failed to get ZEP collection: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    // Session might not exist yet
+    if (error instanceof Error && error.message.includes('404')) {
+      return null;
+    }
+    console.error('Error getting ZEP session:', error);
+    throw new Error(`Failed to get ZEP session: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 /**
- * Deletes a collection from ZEP
- * @param collectionId - The ZEP collection ID
+ * Creates a new session in ZEP
+ * Note: Sessions are automatically created on first memory add, so this is optional
+ * @param sessionId - The session ID
+ * @param metadata - Optional metadata for the session
+ * @returns Session object
  */
-export async function deleteCollection(collectionId: string): Promise<void> {
+export async function createSession(
+  sessionId: string,
+  metadata?: Record<string, unknown>
+): Promise<Zep.Session> {
   try {
     const client = getZepClient();
-    // Note: API methods may vary - adjust based on actual ZEP Cloud SDK documentation
-    await (client.memory as any).deleteCollection(collectionId);
+    const session = await client.memory.addSession({
+      sessionId,
+      metadata,
+    });
+    return session;
   } catch (error) {
-    console.error('Error deleting ZEP collection:', error);
-    throw new Error(`Failed to delete ZEP collection: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Error creating ZEP session:', error);
+    throw new Error(`Failed to create ZEP session: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Updates session metadata
+ * @param sessionId - The session ID
+ * @param metadata - Metadata to update
+ * @returns Updated session object
+ */
+export async function updateSessionMetadata(
+  sessionId: string,
+  metadata: Record<string, unknown>
+): Promise<Zep.Session> {
+  try {
+    const client = getZepClient();
+    const session = await client.memory.updateSession(sessionId, {
+      metadata,
+    });
+    return session;
+  } catch (error) {
+    console.error('Error updating ZEP session metadata:', error);
+    throw new Error(`Failed to update ZEP session metadata: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Deletes all memory for a session
+ * @param sessionId - The session ID
+ */
+export async function deleteMemory(sessionId: string): Promise<void> {
+  try {
+    const client = getZepClient();
+    await client.memory.delete(sessionId);
+  } catch (error) {
+    console.error('Error deleting ZEP memory:', error);
+    throw new Error(`Failed to delete ZEP memory: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 export default {
-  createCollection,
   addMemory,
+  getMemory,
   searchMemory,
-  getCollection,
-  deleteCollection,
+  getSession,
+  createSession,
+  updateSessionMetadata,
+  deleteMemory,
 };

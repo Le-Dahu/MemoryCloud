@@ -37,18 +37,32 @@ Configuration requise dans `.env` :
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-ZEP_API_KEY=your-zep-api-key  # Optionnel
+ZEP_API_KEY=your-zep-api-key  # REQUIS - ZEP est le cœur du produit
 PORT=3000
 ```
 
-### 3. Initialiser la base de données
+### 3. Configurer ZEP Cloud
+
+**ZEP Cloud** est le cœur de MemoryCloud - il fournit la mémoire sémantique inter-IA.
+
+1. Créez un compte sur [ZEP Cloud](https://app.getzep.com)
+2. Générez une API key dans les paramètres
+3. Ajoutez la clé dans votre `.env` : `ZEP_API_KEY=z_your_key_here`
+
+**Comment fonctionne l'intégration ZEP** :
+- Chaque projet utilise son `project_id` comme identifiant de session ZEP
+- Les sessions ZEP sont créées automatiquement lors du premier message
+- La recherche sémantique utilise l'API `memory.search()` de ZEP
+- Pas besoin de créer des collections - tout est géré automatiquement
+
+### 4. Initialiser la base de données
 
 1. Connectez-vous à [Supabase Dashboard](https://supabase.com/dashboard)
 2. Allez dans **SQL Editor** → **New Query**
 3. Copiez et exécutez le contenu de `apps/api/src/db/schema.sql`
 4. Vérifiez que les tables sont créées : `projects`, `api_keys`, `sessions`, `messages`
 
-### 4. Démarrer l'API
+### 5. Démarrer l'API
 
 ```bash
 # Mode développement (auto-reload)
@@ -57,7 +71,7 @@ pnpm dev
 # L'API sera disponible sur http://localhost:3000
 ```
 
-### 5. Générer une API Key
+### 6. Générer une API Key
 
 ```bash
 # Via script CLI

@@ -3,7 +3,8 @@ import * as zep from './zep';
 import { Project } from '../types';
 
 /**
- * Creates a new project and associated ZEP collection
+ * Creates a new project
+ * ZEP sessions are created automatically when the first message is added
  * @param userId - The user ID creating the project
  * @param name - Project name
  * @param description - Optional project description
@@ -15,7 +16,7 @@ export async function createProject(
   description?: string
 ): Promise<Project> {
   try {
-    // First, create the project in Supabase
+    // Create the project in Supabase
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .insert({
@@ -34,29 +35,10 @@ export async function createProject(
       throw new Error('Project was not created');
     }
 
-    // Try to create ZEP collection, but don't fail if ZEP is not configured
-    let zepCollectionId: string | null = null;
-    try {
-      zepCollectionId = await zep.createCollection(project.id, name);
+    // ZEP session will be created automatically when the first message is added
+    // using the project.id as the ZEP sessionId
 
-      // Update project with ZEP collection ID
-      const { error: updateError } = await supabase
-        .from('projects')
-        .update({ zep_collection_id: zepCollectionId })
-        .eq('id', project.id);
-
-      if (updateError) {
-        console.warn('Failed to update project with ZEP collection ID:', updateError);
-      }
-    } catch (zepError) {
-      console.warn('ZEP collection creation failed, continuing without it:', zepError);
-      // Continue without ZEP - it's optional
-    }
-
-    return {
-      ...project,
-      zep_collection_id: zepCollectionId,
-    };
+    return project;
   } catch (error) {
     console.error('Error creating project:', error);
     throw new Error(`Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -157,7 +139,7 @@ export async function updateProject(
 }
 
 /**
- * Deletes a project and its associated ZEP collection
+ * Deletes a project and its associated ZEP memory
  * @param userId - The user ID (for authorization)
  * @param projectId - The project ID
  */
@@ -166,21 +148,19 @@ export async function deleteProject(
   projectId: string
 ): Promise<void> {
   try {
-    // First, get the project to retrieve ZEP collection ID
+    // First, get the project to verify authorization
     const project = await getProject(userId, projectId);
 
     if (!project) {
       throw new Error('Project not found or unauthorized');
     }
 
-    // Delete ZEP collection if it exists
-    if (project.zep_collection_id) {
-      try {
-        await zep.deleteCollection(project.zep_collection_id);
-      } catch (zepError) {
-        console.warn('Failed to delete ZEP collection:', zepError);
-        // Continue with project deletion even if ZEP deletion fails
-      }
+    // Try to delete ZEP session memory (using project_id as session ID)
+    try {
+      await zep.deleteMemory(projectId);
+    } catch (zepError) {
+      console.warn('Failed to delete ZEP memory:', zepError);
+      // Continue with project deletion even if ZEP deletion fails
     }
 
     // Delete the project (cascades to sessions and messages)
