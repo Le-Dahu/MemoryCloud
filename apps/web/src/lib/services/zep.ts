@@ -1,12 +1,14 @@
 import { ZepClient } from '@getzep/zep-cloud';
 import type { Zep } from '@getzep/zep-cloud';
-import { config } from '../config/env';
 
 // Initialize ZEP Cloud client singleton
 let zepClient: ZepClient | null = null;
 
 function getZepClient(): ZepClient {
   if (!zepClient) {
+    // Lazy load config to avoid initialization on module load
+    const { config } = require('../config/env');
+
     if (!config.zep.apiKey) {
       throw new Error('ZEP_API_KEY is not configured');
     }

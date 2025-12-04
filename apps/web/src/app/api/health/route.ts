@@ -1,9 +1,7 @@
-import { NextRequest } from 'next/server';
-import { jsonResponse } from '@/lib/api-utils';
-
-export async function GET(request: NextRequest) {
-  return jsonResponse({
+export async function GET() {
+  return Response.json({
     status: 'ok',
-    timestamp: new Date().toISOString(),
+    timestamp: Date.now(),
+    environment: process.env.NODE_ENV || 'unknown'
   });
 }
