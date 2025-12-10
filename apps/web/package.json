@@ -13,7 +13,7 @@
     "@supabase/supabase-js": "^2.39.3",
     "dotenv": "^16.3.1",
     "formdata-node": "^6.0.3",
-    "next": "16.0.6",
+    "next": "16.0.7",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
